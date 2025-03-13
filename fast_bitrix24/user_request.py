@@ -17,6 +17,7 @@ from .utils import get_warning_stack_level
 
 
 BITRIX_PAGE_SIZE = 50
+UPPER_LIMIT = 100000000
 
 TOP_MOST_LIBRARY_MODULES = [
     "fast_bitrix24\\bitrix",
@@ -171,8 +172,8 @@ class GetAllUserRequest(UserRequestAbstract):
         self.add_order_parameter()
 
         await self.make_first_request()
-
-        if self.first_response.more_results_expected():
+        
+        if self.first_response.more_results_expected(total = self.total): 
             await self.make_remaining_requests()
             self.dedup_results()
 
@@ -203,11 +204,69 @@ class GetAllUserRequest(UserRequestAbstract):
         else:
             self.params = order_clause
 
+    async def find_total(self):
+        start = UPPER_LIMIT
+        params = {"start": start}
+        second_response = ServerResponseParser(
+            await self.srh.single_request(self.method, params = params)
+        )
+        result = second_response.extract_results()
+
+        while len(result) == 0:
+            start = round(start/2)
+            params = {"start": start}
+            second_response = ServerResponseParser(
+                await self.srh.single_request(self.method, params = params)
+            )
+            result = second_response.extract_results()
+
+        lower = start
+        upper = start * 2
+        remain = result
+        while len(remain) > 0:         
+            middle = lower + round((upper-lower)/2) + round((upper-lower)/2) % BITRIX_PAGE_SIZE
+            start_left = lower
+            left_params = {"start": start_left}
+            self.left_response = ServerResponseParser(
+                await self.srh.single_request(self.method, params = left_params)
+            )
+            left_result = self.left_response.extract_results()
+
+
+            start_right = middle
+            right_params = {"start": start_right}
+            self.right_response = ServerResponseParser(
+                await self.srh.single_request(self.method, params = right_params)
+            )
+            right_result = self.right_response.extract_results()
+            if len(right_result) > 0:
+                remain = right_result
+                if len(remain) < BITRIX_PAGE_SIZE:
+                    total = start_right + len(remain)
+                    return total
+                else:
+                    lower = middle
+
+            else:
+                remain = left_result
+                if len(remain) < BITRIX_PAGE_SIZE:
+                    total = start_left + len(remain)
+                    return total
+                else:
+                    upper = middle
+
+            if lower - upper == BITRIX_PAGE_SIZE:
+                total = upper
+                return total
+
     async def make_first_request(self):
         self.first_response = ServerResponseParser(
             await self.srh.single_request(self.method, self.params)
         )
-        self.total = self.first_response.total
+        if self.first_response.response.get("next"):
+            self.total = self.first_response.total
+        else:
+            self.total = await self.find_total()
         self.results = self.first_response.extract_results()
 
     @icontract.require(lambda self: isinstance(self.results, list))

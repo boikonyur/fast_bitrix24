@@ -12,9 +12,9 @@ class ServerResponseParser:
         self.response = response
         self.get_by_ID = get_by_ID
 
-    def more_results_expected(self) -> bool:
+    def more_results_expected(self, total: int) -> bool:
         return (
-            self.total and self.total > 50 and self.total != len(self.extract_results())
+            total > len(self.extract_results())
         )
 
     @property
