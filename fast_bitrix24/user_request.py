@@ -172,7 +172,6 @@ class GetAllUserRequest(UserRequestAbstract):
         self.add_order_parameter()
 
         await self.make_first_request()
-        
         if self.first_response.more_results_expected(total = self.total): 
             await self.make_remaining_requests()
             self.dedup_results()
@@ -263,10 +262,16 @@ class GetAllUserRequest(UserRequestAbstract):
         self.first_response = ServerResponseParser(
             await self.srh.single_request(self.method, self.params)
         )
-        if self.first_response.response.get("next"):
-            self.total = self.first_response.total
+        if self.first_response.response.get("total"):
+            if self.first_response.response["total"] < BITRIX_PAGE_SIZE:
+                self.total = self.first_response.response["total"]
+            elif self.first_response.response["total"] == BITRIX_PAGE_SIZE:
+                self.total = await self.find_total()
+            else:
+                self.total = self.first_response.total
         else:
             self.total = await self.find_total()
+
         self.results = self.first_response.extract_results()
 
     @icontract.require(lambda self: isinstance(self.results, list))
