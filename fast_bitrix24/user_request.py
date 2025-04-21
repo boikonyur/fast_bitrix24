@@ -270,7 +270,10 @@ class GetAllUserRequest(UserRequestAbstract):
             else:
                 self.total = self.first_response.total
         else:
-            self.total = await self.find_total()
+            if len(self.first_response.result) == 0:
+                self.total = 0
+            else:
+                self.total = await self.find_total()
 
         self.results = self.first_response.extract_results()
 
